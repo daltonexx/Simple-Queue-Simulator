@@ -33,11 +33,10 @@ arrivals = 0  # Contador de clientes que chegaram
 departures = 0  # Contador de clientes que saíram
 losses = 0  # Contador de perda de clientes
 total_waiting_time = 0  # Tempo total de espera
+times = [0] * (queue_capacity + 1)  # Para armazenar tempos acumulados de cada estado
 
 # Fila e servidores
 queue = []  # Fila de clientes
-servers = 1  # Número de servidores, pode ser 1 ou 2
-clients_serving = [None] * servers  # Status de servidores (None = o servidor está livre)
 
 # Função para processar chegada de cliente
 def arrival():
@@ -51,14 +50,12 @@ def arrival():
 # Função para processar saída de cliente
 def departure():
     global departures, total_waiting_time
-    for i in range(servers):
+    for i in range(len(clients_serving)):
         if clients_serving[i] is not None:
             # O tempo de espera é calculado a partir do tempo de chegada (clients_serving[i] guarda o tempo de chegada)
             arrival_time = clients_serving[i]  # O tempo de chegada é o valor armazenado na fila
-            # Verificar se o tempo atual não é menor que o tempo de chegada
             if time < arrival_time:
-                print("ERRO: O tempo atual é menor que o tempo de chegada. Corrija a lógica de chegada!")
-                break
+                continue  # Não faz sentido processar saída se o tempo de chegada for maior que o tempo atual
             
             # Calcular o tempo de espera
             waiting_time = time - arrival_time  # Tempo de espera é a diferença entre o tempo atual e o tempo de chegada
@@ -71,18 +68,25 @@ def departure():
             break
 
 # Função para atender clientes, escolhendo quem vai ser atendido
-def serve():
+def serve(servers):
     global clients_serving
     for i in range(servers):
+        # Apenas atender se o servidor estiver livre e a fila não estiver vazia
         if clients_serving[i] is None and len(queue) > 0:
-            client_arrival_time = queue.pop(0)
-            service_time = generate_interval(service_min, service_max)
+            client_arrival_time = queue.pop(0)  # Pega o cliente da fila
+            service_time = generate_interval(service_min, service_max)  # Gera o tempo de serviço
             clients_serving[i] = time + service_time  # Atribui tempo de serviço ao servidor
 
 # Função para rodar a simulação
-def run_simulation():
+def run_simulation(servers):
     global time
-    while time < simulation_time:
+    count = 100000  # Contador de eventos para a simulação
+
+    # Inicializando o array de servidores
+    global clients_serving
+    clients_serving = [None] * servers  # Inicializa com o número correto de servidores
+
+    while count > 0:
         event_type = NextRandom(a, c, M, seed)  # Gera um número aleatório para decidir evento
 
         if event_type < 0.5:  # 50% de chance de chegar um cliente
@@ -90,8 +94,14 @@ def run_simulation():
         else:  # Caso contrário, um cliente vai sair
             departure()
 
-        serve()  # Atende os clientes se possível
+        serve(servers)  # Atende os clientes se possível
+        
+        # Atualizando o estado da fila (número de clientes) a cada unidade de tempo
+        num_clients = len(queue)
+        times[num_clients] += 1  # Acumulando o tempo no estado correspondente
+
         time += 1  # Avança o tempo
+        count -= 1  # Decrementa o contador de eventos
 
 # Função para imprimir os resultados da simulação
 def print_results():
@@ -101,6 +111,26 @@ def print_results():
     print(f"Tempo médio de espera: {total_waiting_time / departures if departures > 0 else 0}")
     print(f"Tempo total de simulação: {time}")
 
-# Executar a simulação
-run_simulation()
+    # Cálculo da distribuição de probabilidade dos estados da fila
+    print("\nDistribuição de Probabilidade dos Estados da Fila:")
+    for i in range(queue_capacity + 1):
+        probability = times[i] / time  # Probabilidade de estar no estado i
+        print(f"Fila com {i} clientes: {probability * 100:.2f}%")
+
+# Executar a simulação para G/G/1/5 (1 servidor)
+print("Resultados para G/G/1/5:")
+run_simulation(1)
+print_results()
+
+# Reiniciar variáveis para a simulação de G/G/2/5 (2 servidores)
+time = 0
+arrivals = 0
+departures = 0
+losses = 0
+total_waiting_time = 0
+times = [0] * (queue_capacity + 1)
+
+# Executar a simulação para G/G/2/5 (2 servidores)
+print("\nResultados para G/G/2/5:")
+run_simulation(2)
 print_results()
