@@ -1,0 +1,47 @@
+# Parâmetros globais
+a: 123
+c: 322
+M: 100000
+seed: 3452.0
+qtd_numeros_aleatorios: 100000
+
+# Fila G/G/1/5
+filas:
+  - tempo_chegada_minimo: 2
+    tempo_chegada_maximo: 5
+    tempo_servico_minimo: 3
+    tempo_servico_maximo: 5
+    num_servidores: 1
+    capacidade_fila: 5
+
+  # Fila G/G/2/5
+  - tempo_chegada_minimo: 2
+    tempo_chegada_maximo: 5
+    tempo_servico_minimo: 3
+    tempo_servico_maximo: 5
+    num_servidores: 2
+    capacidade_fila: 5
+
+# Transições
+transicoes:
+  - origem: 1
+    destino: 2
+    probabilidade: 0.8
+  - origem: 1
+    destino: 3
+    probabilidade: 0.2
+  - origem: 2
+    destino: 2
+    probabilidade: 0.5
+  - origem: 2
+    destino: 1
+    probabilidade: 0.3
+  - origem: 2
+    destino: saida
+    probabilidade: 0.2
+  - origem: 3
+    destino: 3
+    probabilidade: 0.7
+  - origem: 3
+    destino: saida
+    probabilidade: 0.3
