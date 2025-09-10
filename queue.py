@@ -33,12 +33,11 @@ class Fila:
         self.filas_conectadas = []
 
     def Chegada(self, e):
-        # Ajustar para evitar tempos negativos
-        tempo_chegada = e.tempo - self.Timestamp
-        if tempo_chegada < 0:
-            tempo_chegada = 0  # Evitar valores negativos no tempo
-
-        self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_chegada
+        # Calcula o tempo decorrido desde o último evento nesta fila
+        tempo_decorrido = e.tempo - self.Timestamp
+        self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_decorrido
+        
+        # Atualiza o tempo do último evento e o tempo global
         self.Timestamp = e.tempo
         global tempo_global
         tempo_global = e.tempo
@@ -46,85 +45,95 @@ class Fila:
         if self.Customers < self.Capacity:
             self.Customers += 1
             if self.Customers <= self.Server:
+                # Se há servidores livres, agenda uma passagem (P) ou saída (S)
                 if len(self.filas_conectadas) > 0:
-                    eventos.append(Evento('P', self))
+                    heapq.heappush(eventos, Evento('P', self))
                 else:
-                    eventos.append(Evento('S', self))
+                    heapq.heappush(eventos, Evento('S', self))
         else:
             self.Loss += 1
+        
+        # Se o evento foi uma chegada externa ('C'), agenda a próxima chegada externa
         if e.tipo == 'C':
-            eventos.append(Evento('C', self))
+            heapq.heappush(eventos, Evento('C', self))
 
     def Passagem(self, e):
-        self.Saida(e)
+        self.Saida(e) # Primeiro, processa a saída da fila atual
+        
+        # Determina para qual próxima fila o cliente vai
         probabilidade_passagem = nextRandom()
         acumulada = 0
-        for fila in self.filas_conectadas:
-            acumulada += fila.probabilidade
+        for rota in self.filas_conectadas:
+            acumulada += rota.probabilidade
             if probabilidade_passagem < acumulada:
-                if not fila.saida:
-                    e.fila = fila.fila
-                    e.fila.Chegada(e)
+                if not rota.saida:
+                    # Cria um novo evento de "chegada" na próxima fila
+                    evento_chegada_proxima_fila = Evento('A', rota.fila, tempo=e.tempo) # 'A' para chegada interna
+                    rota.fila.Chegada(evento_chegada_proxima_fila)
+                # Se for 'saida', o cliente simplesmente vai embora.
                 return
-        ultima = self.filas_conectadas[-1]
-        if not ultima.saida:
-            e.fila = ultima.fila
-            e.fila.Chegada(e)
 
     def Saida(self, e):
-        # Ajustar para evitar tempos negativos
-        tempo_saida = e.tempo - self.Timestamp
-        if tempo_saida < 0:
-            tempo_saida = 0  # Evitar valores negativos no tempo
-
-        self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_saida
+        # Calcula o tempo decorrido desde o último evento nesta fila
+        tempo_decorrido = e.tempo - self.Timestamp
+        self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_decorrido
+        
+        # Atualiza o tempo do último evento e o tempo global
         self.Timestamp = e.tempo
         global tempo_global
         tempo_global = e.tempo
+
         self.Customers -= 1
         if self.Customers >= self.Server:
+            # Se ainda há clientes na fila de espera, agenda o próximo serviço
             if len(self.filas_conectadas) != 0:
-                eventos.append(Evento('P', self))
+                heapq.heappush(eventos, Evento('P', self))
             else:
-                eventos.append(Evento('S', self))
+                heapq.heappush(eventos, Evento('S', self))
 
     def __str__(self):
         sb = f"Perda de clientes: {self.Loss}\n"
         
-        # Exibir todos os 6 estados (de 0 a 5), mesmo que alguns tenham 0% de probabilidade
-        for estado in range(6):  # Agora são 6 estados (de 0 a 5)
-            tempo = self.Times.get(estado, 0.0)  # Garantir que todos os 6 estados sejam exibidos
+        # ## ALTERAÇÃO ##: Itera de 0 até a capacidade da fila, tornando a exibição dinâmica.
+        for estado in range(self.Capacity + 1):
+            tempo = self.Times.get(estado, 0.0)
             probabilidade = (tempo / tempo_global) * 100 if tempo_global > 0 else 0
             sb += f"Estado {estado}: tempo = {tempo:.4f} \t probabilidade = {probabilidade:.4f}%\n"
-        
+            
         return sb
 
 class Evento:
     def __init__(self, tipo, fila_param=None, tempo=None):
         self.tipo = tipo
         self.fila = fila_param
-        if tipo == 'C':
-            self.tempo = tempo_global + ((self.fila.MaxArrival - self.fila.MinArrival) * nextRandom() + self.fila.MinArrival)
+        
+        # ## ALTERAÇÃO ##: Prioriza o tempo passado como parâmetro. Se não for passado, calcula um novo.
+        if tempo is not None:
+            self.tempo = tempo
         else:
-            self.tempo = tempo_global + ((self.fila.MaxService - self.fila.MinService) * nextRandom() + self.fila.MinService)
+            if tipo == 'C':
+                self.tempo = tempo_global + ((self.fila.MaxArrival - self.fila.MinArrival) * nextRandom() + self.fila.MinArrival)
+            else: # 'S' ou 'P'
+                self.tempo = tempo_global + ((self.fila.MaxService - self.fila.MinService) * nextRandom() + self.fila.MinService)
 
     def __lt__(self, other):
-        """Método para comparar os eventos com base no tempo."""
         return self.tempo < other.tempo
 
     def __str__(self):
-        return f"{self.tipo} {self.tempo}"
+        return f"Tipo: {self.tipo}, Tempo: {self.tempo:.4f}, Fila: {filas.index(self.fila) + 1}"
 
 eventos = []
 
 def nextRandom():
     global numero_previo, a, c, M, numeros_aleatorios_usados
+    if numeros_aleatorios_usados >= qtd_numeros_aleatorios:
+        return 1.0 # Evita gerar mais números que o permitido
     numero_previo = (a * numero_previo + c) % M
     numeros_aleatorios_usados += 1
     return numero_previo / M
 
 def loadYamlConfig(nome_arquivo):
-    global a, c, M, seed, qtd_numeros_aleatorios
+    global a, c, M, seed, qtd_numeros_aleatorios, numero_previo
     try:
         with open(nome_arquivo, 'r') as file:
             data = yaml.safe_load(file)
@@ -132,24 +141,18 @@ def loadYamlConfig(nome_arquivo):
             c = data.get('c', 0)
             M = data.get('M', 0)
             seed = data.get('seed', 0.0)
+            numero_previo = seed # Inicia o gerador com a semente
             qtd_numeros_aleatorios = data.get('qtd_numeros_aleatorios', 0)
 
             for fila_data in data.get('filas', []):
-                tempo_chegada_minimo = fila_data['tempo_chegada_minimo']
-                tempo_chegada_maximo = fila_data['tempo_chegada_maximo']
-                tempo_servico_minimo = fila_data['tempo_servico_minimo']
-                tempo_servico_maximo = fila_data['tempo_servico_maximo']
-                num_servidores = fila_data['num_servidores']
-                capacidade_fila = fila_data['capacidade_fila']
-                
-                # Tratamento para capacidade infinita ou string numérica
-                if capacidade_fila == "infinito":
-                    capacidade_fila = float('inf')  # Use infinito para capacidade ilimitada
-                else:
-                    capacidade_fila = int(capacidade_fila)  # Converta para inteiro se for numérico
-                
-                fila = Fila(num_servidores, capacidade_fila, tempo_chegada_minimo, tempo_chegada_maximo,
-                            tempo_servico_minimo, tempo_servico_maximo)
+                fila = Fila(
+                    fila_data['num_servidores'],
+                    fila_data['capacidade_fila'],
+                    fila_data['tempo_chegada_minimo'],
+                    fila_data['tempo_chegada_maximo'],
+                    fila_data['tempo_servico_minimo'],
+                    fila_data['tempo_servico_maximo']
+                )
                 filas.append(fila)
 
             for transicao in data.get('transicoes', []):
@@ -159,37 +162,45 @@ def loadYamlConfig(nome_arquivo):
                 if destino == "saida":
                     filas[origem].filas_conectadas.append(FilaEProbabilidade(None, prob, True))
                 else:
-                    destino = int(destino) - 1
-                    filas[origem].filas_conectadas.append(FilaEProbabilidade(filas[destino], prob))
-
-            for fila in filas:
-                fila.filas_conectadas.sort(key=lambda f: f.probabilidade)
+                    destino_idx = int(destino) - 1
+                    filas[origem].filas_conectadas.append(FilaEProbabilidade(filas[destino_idx], prob))
     except Exception as e:
         print(e)
 
 def main():
-    global eventos
+    global eventos, tempo_global
     loadYamlConfig('input_simulador.yml')
-    print("Filas carregadas:", filas)
+    
     if not filas:
-        print("Erro: Não há filas carregadas!")
+        print("Erro: Nenhuma fila foi carregada do arquivo de configuração.")
         return
-    numero_previo = seed
-    eventos.append(Evento('C', filas[0], 2))
 
-    while numeros_aleatorios_usados < qtd_numeros_aleatorios:
+    # ## ALTERAÇÃO ##: Cria o primeiro evento de chegada no tempo fixo de 1.5, conforme solicitado.
+    primeiro_evento = Evento('C', filas[0], tempo=1.5)
+    heapq.heappush(eventos, primeiro_evento)
+
+    while numeros_aleatorios_usados < qtd_numeros_aleatorios and eventos:
         e = heapq.heappop(eventos)
-        if e.tipo == 'C':
+        
+        if e.tipo == 'C' or e.tipo == 'A':
             e.fila.Chegada(e)
         elif e.tipo == 'P':
             e.fila.Passagem(e)
         elif e.tipo == 'S':
             e.fila.Saida(e)
 
+    # Ao final da simulação, calcula o tempo restante no estado atual para cada fila
+    for fila in filas:
+        if fila.Timestamp < tempo_global:
+            tempo_final_estado = tempo_global - fila.Timestamp
+            fila.Times[fila.Customers] = fila.Times.get(fila.Customers, 0.0) + tempo_final_estado
+
+    print(f"SIMULAÇÃO FINALIZADA\n")
     print(f"Tempo global da simulação: {tempo_global:.4f}")
+    print(f"Números aleatórios usados: {numeros_aleatorios_usados}\n")
+    
     for i, fila in enumerate(filas, start=1):
-        fila.Times[fila.Customers] = fila.Times.get(fila.Customers, 0.0) + (tempo_global - fila.Timestamp)
-        print(f"Fila {i}:")
+        print(f"----- Fila {i} -----")
         print(fila)
 
 if __name__ == "__main__":

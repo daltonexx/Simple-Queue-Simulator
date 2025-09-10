@@ -1,47 +1,36 @@
-# Parâmetros globais
-a: 123
-c: 322
-M: 100000
+# Parâmetros globais do gerador de números aleatórios
+a: 1664525
+c: 1013904223
+M: 4294967296 # 2^32
 seed: 3452.0
 qtd_numeros_aleatorios: 100000
 
-# Fila G/G/1/5
+# Definição das filas da rede
 filas:
-  - tempo_chegada_minimo: 2
-    tempo_chegada_maximo: 5
-    tempo_servico_minimo: 3
-    tempo_servico_maximo: 5
+  # Fila 1: G/G/2/3
+  - tempo_chegada_minimo: 1.0
+    tempo_chegada_maximo: 4.0
+    tempo_servico_minimo: 3.0
+    tempo_servico_maximo: 4.0
+    num_servidores: 2
+    capacidade_fila: 3
+
+  # Fila 2: G/G/1/5
+  - tempo_chegada_minimo: 0.0   # Irrelevante, não há chegadas externas
+    tempo_chegada_maximo: 0.0   # Irrelevante, não há chegadas externas
+    tempo_servico_minimo: 2.0
+    tempo_servico_maximo: 3.0
     num_servidores: 1
     capacidade_fila: 5
 
-  # Fila G/G/2/5
-  - tempo_chegada_minimo: 2
-    tempo_chegada_maximo: 5
-    tempo_servico_minimo: 3
-    tempo_servico_maximo: 5
-    num_servidores: 2
-    capacidade_fila: 5
-
-# Transições
+# Transições e roteamento entre as filas
 transicoes:
+  # 100% dos clientes que saem da Fila 1 vão para a Fila 2
   - origem: 1
     destino: 2
-    probabilidade: 0.8
-  - origem: 1
-    destino: 3
-    probabilidade: 0.2
-  - origem: 2
-    destino: 2
-    probabilidade: 0.5
-  - origem: 2
-    destino: 1
-    probabilidade: 0.3
+    probabilidade: 1.0
+    
+  # 100% dos clientes que saem da Fila 2 vão embora do sistema
   - origem: 2
     destino: saida
-    probabilidade: 0.2
-  - origem: 3
-    destino: 3
-    probabilidade: 0.7
-  - origem: 3
-    destino: saida
-    probabilidade: 0.3
+    probabilidade: 1.0
