@@ -1,5 +1,6 @@
 import yaml
 import heapq
+import operator # Para sorting no __str__
 
 # Controle do simulador
 a = 0
@@ -33,70 +34,87 @@ class Fila:
         self.filas_conectadas = []
 
     def Chegada(self, e):
-        # Calcula o tempo decorrido desde o último evento nesta fila
+        # 1. Atualiza tempos acumulados e tempo global
         tempo_decorrido = e.tempo - self.Timestamp
         self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_decorrido
         
-        # Atualiza o tempo do último evento e o tempo global
         self.Timestamp = e.tempo
         global tempo_global
         tempo_global = e.tempo
 
         if self.Customers < self.Capacity:
+            # 2. Cliente entra e conta como na fila
             self.Customers += 1
+            
+            # 3. Se há servidores livres (Customers <= Server), agenda o FIM do SERVIÇO (P ou S)
             if self.Customers <= self.Server:
-                # Se há servidores livres, agenda uma passagem (P) ou saída (S)
                 if len(self.filas_conectadas) > 0:
                     heapq.heappush(eventos, Evento('P', self))
                 else:
                     heapq.heappush(eventos, Evento('S', self))
-        else:
-            self.Loss += 1
-        
-        # Se o evento foi uma chegada externa ('C'), agenda a próxima chegada externa
-        if e.tipo == 'C':
-            heapq.heappush(eventos, Evento('C', self))
+            
+            # 4. Se foi chegada externa ('C' na Fila 1), agenda a próxima chegada externa
+            if e.tipo == 'C':
+                # Reusa 'e' para agendar a próxima chegada externa.
+                heapq.heappush(eventos, Evento('C', self))
 
+        else:
+            # 5. PERDA DE CLIENTE
+            self.Loss += 1
+    
     def Passagem(self, e):
-        self.Saida(e) # Primeiro, processa a saída da fila atual
+        # 1. ATUALIZA ESTADO (Fim do Serviço)
+        tempo_decorrido = e.tempo - self.Timestamp
+        self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_decorrido
+        self.Timestamp = e.tempo
+        global tempo_global
+        tempo_global = e.tempo
+
+        self.Customers -= 1 # Cliente sai do serviço/fila
+
+        # 2. AGENDA PRÓXIMO SERVIÇO, se houver espera (Customers >= Server)
+        if self.Customers >= self.Server:
+            if len(self.filas_conectadas) != 0:
+                heapq.heappush(eventos, Evento('P', self))
+            else:
+                heapq.heappush(eventos, Evento('S', self))
         
-        # Determina para qual próxima fila o cliente vai
+        # 3. Lógica de ENCAMINHAMENTO (Roteamento)
         probabilidade_passagem = nextRandom()
         acumulada = 0
         for rota in self.filas_conectadas:
             acumulada += rota.probabilidade
             if probabilidade_passagem < acumulada:
                 if not rota.saida:
-                    # Cria um novo evento de "chegada" na próxima fila
-                    evento_chegada_proxima_fila = Evento('A', rota.fila, tempo=e.tempo) # 'A' para chegada interna
+                    # Cria um novo evento de "chegada interna" ('A') no tempo atual
+                    evento_chegada_proxima_fila = Evento('A', rota.fila, tempo=e.tempo)
                     rota.fila.Chegada(evento_chegada_proxima_fila)
                 # Se for 'saida', o cliente simplesmente vai embora.
                 return
 
     def Saida(self, e):
-        # Calcula o tempo decorrido desde o último evento nesta fila
+        # 1. ATUALIZA ESTADO (Fim do Serviço)
         tempo_decorrido = e.tempo - self.Timestamp
         self.Times[self.Customers] = self.Times.get(self.Customers, 0.0) + tempo_decorrido
-        
-        # Atualiza o tempo do último evento e o tempo global
         self.Timestamp = e.tempo
         global tempo_global
         tempo_global = e.tempo
 
-        self.Customers -= 1
+        self.Customers -= 1 # Cliente sai do serviço/fila
+        
+        # 2. AGENDA PRÓXIMO SERVIÇO, se houver espera (Customers >= Server)
         if self.Customers >= self.Server:
-            # Se ainda há clientes na fila de espera, agenda o próximo serviço
-            if len(self.filas_conectadas) != 0:
-                heapq.heappush(eventos, Evento('P', self))
-            else:
-                heapq.heappush(eventos, Evento('S', self))
+            # Agenda o próximo FIM de SERVIÇO (Saída), já que não há rotas P
+            heapq.heappush(eventos, Evento('S', self))
 
     def __str__(self):
         sb = f"Perda de clientes: {self.Loss}\n"
         
-        # ## ALTERAÇÃO ##: Itera de 0 até a capacidade da fila, tornando a exibição dinâmica.
-        for estado in range(self.Capacity + 1):
-            tempo = self.Times.get(estado, 0.0)
+        # OTIMIZAÇÃO: Filtra apenas os estados que tiveram tempo acumulado (> 0) e os ordena.
+        estados_alcançados = sorted([estado for estado, tempo in self.Times.items() if tempo > 0.0])
+        
+        for estado in estados_alcançados:
+            tempo = self.Times[estado]
             probabilidade = (tempo / tempo_global) * 100 if tempo_global > 0 else 0
             sb += f"Estado {estado}: tempo = {tempo:.4f} \t probabilidade = {probabilidade:.4f}%\n"
             
@@ -107,14 +125,17 @@ class Evento:
         self.tipo = tipo
         self.fila = fila_param
         
-        # ## ALTERAÇÃO ##: Prioriza o tempo passado como parâmetro. Se não for passado, calcula um novo.
         if tempo is not None:
             self.tempo = tempo
         else:
+            # Chegada Externa ('C')
             if tipo == 'C':
-                self.tempo = tempo_global + ((self.fila.MaxArrival - self.fila.MinArrival) * nextRandom() + self.fila.MinArrival)
-            else: # 'S' ou 'P'
-                self.tempo = tempo_global + ((self.fila.MaxService - self.fila.MinService) * nextRandom() + self.fila.MinService)
+                delta_t = ((self.fila.MaxArrival - self.fila.MinArrival) * nextRandom() + self.fila.MinArrival)
+                self.tempo = tempo_global + delta_t
+            # Serviço ('S' ou 'P')
+            else: 
+                delta_t = ((self.fila.MaxService - self.fila.MinService) * nextRandom() + self.fila.MinService)
+                self.tempo = tempo_global + delta_t
 
     def __lt__(self, other):
         return self.tempo < other.tempo
@@ -127,7 +148,8 @@ eventos = []
 def nextRandom():
     global numero_previo, a, c, M, numeros_aleatorios_usados
     if numeros_aleatorios_usados >= qtd_numeros_aleatorios:
-        return 1.0 # Evita gerar mais números que o permitido
+        return 1.0 # Evita gerar mais números que o permitido e força a parada
+        
     numero_previo = (a * numero_previo + c) % M
     numeros_aleatorios_usados += 1
     return numero_previo / M
@@ -141,10 +163,13 @@ def loadYamlConfig(nome_arquivo):
             c = data.get('c', 0)
             M = data.get('M', 0)
             seed = data.get('seed', 0.0)
-            numero_previo = seed # Inicia o gerador com a semente
+            numero_previo = seed
             qtd_numeros_aleatorios = data.get('qtd_numeros_aleatorios', 0)
 
+            # Carrega as Filas
             for fila_data in data.get('filas', []):
+                # A sua lógica de carregamento YAML no Python era baseada em dicionário, não em linhas.
+                # A capacidade infinita deve ser tratada no YAML (ex: 99999).
                 fila = Fila(
                     fila_data['num_servidores'],
                     fila_data['capacidade_fila'],
@@ -155,6 +180,7 @@ def loadYamlConfig(nome_arquivo):
                 )
                 filas.append(fila)
 
+            # Configura as Transições
             for transicao in data.get('transicoes', []):
                 origem = transicao['origem'] - 1
                 destino = transicao['destino']
@@ -165,7 +191,7 @@ def loadYamlConfig(nome_arquivo):
                     destino_idx = int(destino) - 1
                     filas[origem].filas_conectadas.append(FilaEProbabilidade(filas[destino_idx], prob))
     except Exception as e:
-        print(e)
+        print(f"Erro ao carregar a configuração YAML: {e}")
 
 def main():
     global eventos, tempo_global
@@ -175,12 +201,15 @@ def main():
         print("Erro: Nenhuma fila foi carregada do arquivo de configuração.")
         return
 
-    # ## ALTERAÇÃO ##: Cria o primeiro evento de chegada no tempo fixo de 1.5, conforme solicitado.
-    primeiro_evento = Evento('C', filas[0], tempo=1.5)
+    # CRÍTICO: Agenda o primeiro evento de chegada no tempo fixo de 2.0 (Fila 1)
+    primeiro_evento = Evento('C', filas[0], tempo=2.0)
     heapq.heappush(eventos, primeiro_evento)
 
     while numeros_aleatorios_usados < qtd_numeros_aleatorios and eventos:
         e = heapq.heappop(eventos)
+        
+        # A simulação deve parar se o próximo evento for além do tempo limite do último aleatório usado.
+        # No entanto, vamos confiar no 'nextRandom' para parar de gerar novos eventos e deixar o loop consumir os eventos remanescentes.
         
         if e.tipo == 'C' or e.tipo == 'A':
             e.fila.Chegada(e)
@@ -189,18 +218,20 @@ def main():
         elif e.tipo == 'S':
             e.fila.Saida(e)
 
-    # Ao final da simulação, calcula o tempo restante no estado atual para cada fila
+    # Ao final, calcula o tempo restante no estado atual para cada fila
     for fila in filas:
         if fila.Timestamp < tempo_global:
             tempo_final_estado = tempo_global - fila.Timestamp
             fila.Times[fila.Customers] = fila.Times.get(fila.Customers, 0.0) + tempo_final_estado
 
-    print(f"SIMULAÇÃO FINALIZADA\n")
+    print(f"\n{'='*30}")
+    print(f"SIMULAÇÃO FINALIZADA")
+    print(f"{'='*30}\n")
     print(f"Tempo global da simulação: {tempo_global:.4f}")
     print(f"Números aleatórios usados: {numeros_aleatorios_usados}\n")
     
     for i, fila in enumerate(filas, start=1):
-        print(f"----- Fila {i} -----")
+        print(f"----- Fila {i} (Servidores={fila.Server} / Capacidade={fila.Capacity}) -----")
         print(fila)
 
 if __name__ == "__main__":
