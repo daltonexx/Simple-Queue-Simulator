@@ -1,64 +1,59 @@
-# Parâmetros para o Gerador Congruente Linear (LCG)
-a: 1664525
-c: 1013904223
-M: 4294967296
-seed: 3452.0
-qtd_numeros_aleatorios: 100000
+# Configuração do Gerador de Números Pseudo-Aleatórios (LGM)
+a: 16807 # Multiplicador
+c: 0     # Incremento
+M: 2147483647 # Módulo (2^31 - 1)
+seed: 123456.0 # Semente inicial
+qtd_numeros_aleatorios: 100000 # Número de interações ou eventos
 
-# Definição das filas da rede
+# Definição das Filas (no mínimo 3)
 filas:
-  # Fila 1: G/G/1
-  # Chegada Externa: 2..4min | Serviço: 1..2min | Servidores: 1 | Capacidade: Infinita
-  - tempo_chegada_minimo: 2.0
-    tempo_chegada_maximo: 4.0
-    tempo_servico_minimo: 1.0
-    tempo_servico_maximo: 2.0
-    num_servidores: 1
-    capacidade_fila: 99999  # Representa capacidade infinita
+  # Fila 1: Recepção (G/G/2/5)
+  - num_servidores: 2
+    capacidade_fila: 5  # Capacidade finita (2 em serviço + 3 na fila)
+    tempo_chegada_minimo: 1.0 # Chegada externa de clientes
+    tempo_chegada_maximo: 5.0
+    tempo_servico_minimo: 2.0
+    tempo_servico_maximo: 4.0
 
-  # Fila 2: G/G/2/5
-  # Serviço: 4..6min | Servidores: 2 | Capacidade: 5
-  - tempo_chegada_minimo: 0.0    # Irrelevante, não há chegadas externas
-    tempo_chegada_maximo: 0.0    # Irrelevante, não há chegadas externas
-    tempo_servico_minimo: 4.0
-    tempo_servico_maximo: 6.0
-    num_servidores: 2
-    capacidade_fila: 5
-
-  # Fila 3: G/G/2/10
-  # Serviço: 5..15min | Servidores: 2 | Capacidade: 10
-  - tempo_chegada_minimo: 0.0    # Irrelevante, não há chegadas externas
-    tempo_chegada_maximo: 0.0    # Irrelevante, não há chegadas externas
+  # Fila 2: Validação Jurídica (G/G/1/4)
+  - num_servidores: 1
+    capacidade_fila: 4 # Capacidade finita (1 em serviço + 3 na fila)
+    tempo_chegada_minimo: 0.0 # Chegada é apenas de outras filas
+    tempo_chegada_maximo: 0.0
     tempo_servico_minimo: 5.0
-    tempo_servico_maximo: 15.0
-    num_servidores: 2
-    capacidade_fila: 10
+    tempo_servico_maximo: 10.0
 
-# Transições e roteamento entre as filas
+  # Fila 3: Finalização/Registro (G/G/3/inf)
+  - num_servidores: 3
+    capacidade_fila: 99999 # Capacidade infinita
+    tempo_chegada_minimo: 0.0 # Chegada é apenas de outras filas
+    tempo_chegada_maximo: 0.0
+    tempo_servico_minimo: 1.0
+    tempo_servico_maximo: 3.0
+
+# Definição das Transições (Roteamento)
 transicoes:
-  # Roteamento da Fila 1
+  # Fila 1 -> Fila 2
   - origem: 1
     destino: 2
-    probabilidade: 0.8
-  - origem: 1
-    destino: 3
-    probabilidade: 0.2
-    
-  # Roteamento da Fila 2
+    probabilidade: 1.0
+
+  # Fila 2 -> Fila 1 (Retorno)
   - origem: 2
-    destino: 1       # Feedback para Fila 1
-    probabilidade: 0.3
-  - origem: 2
-    destino: saida
-    probabilidade: 0.2
+    destino: 1
+    probabilidade: 0.20
+
+  # Fila 2 -> Fila 3
   - origem: 2
     destino: 3
-    probabilidade: 0.5
-    
-  # Roteamento da Fila 3
+    probabilidade: 0.70
+
+  # Fila 2 -> Saída (Desistência/Rejeição)
+  - origem: 2
+    destino: "saida"
+    probabilidade: 0.10
+
+  # Fila 3 -> Saída
   - origem: 3
-    destino: 2       # Feedback para Fila 2
-    probabilidade: 0.7
-  - origem: 3
-    destino: saida
-    probabilidade: 0.3
+    destino: "saida"
+    probabilidade: 1.0
